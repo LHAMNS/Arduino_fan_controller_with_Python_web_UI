@@ -1,31 +1,35 @@
-// Arduino Mega 风扇控制程序
+// Arduino Mega 风扇控制程序 - 优化版
 // 作者：Assistant
 
 // 引脚定义
-const uint8_t FAN1_PWM_PIN = 11;    // 使用Timer1，通道A
-const uint8_t FAN2_PWM_PIN = 5;     // 使用Timer3，通道A
-const uint8_t FAN1_TACH_PIN = 2;    // 外部中断0
-const uint8_t FAN2_TACH_PIN = 3;    // 外部中断1
+const uint8_t FAN1_PWM_PIN = 11;    // 风扇1的PWM引脚，连接到Timer1，通道A，用于控制风扇转速
+const uint8_t FAN2_PWM_PIN = 5;     // 风扇2的PWM引脚，连接到Timer3，通道A，用于控制风扇转速
+const uint8_t FAN1_TACH_PIN = 2;    // 风扇1的测速引脚，外部中断0，用于测量风扇转速
+const uint8_t FAN2_TACH_PIN = 3;    // 风扇2的测速引脚，外部中断1，用于测量风扇转速
 
 // 全局变量
-volatile uint16_t fan1_pulse_count = 0;
-volatile uint16_t fan2_pulse_count = 0;
-uint16_t fan1_rpm = 0;
-uint16_t fan2_rpm = 0;
-uint16_t pwm_frequency_fan1 = 25000; // 默认25kHz
-uint16_t pwm_frequency_fan2 = 25000; // 默认25kHz
-uint8_t duty_cycle_fan1 = 0; // 0-100%
-uint8_t duty_cycle_fan2 = 0; // 0-100%
+volatile uint32_t fan1_pulse_count = 0;  // 风扇1测速脉冲计数，每转产生多个脉冲，用于计算转速
+volatile uint32_t fan2_pulse_count = 0;  // 风扇2测速脉冲计数
+uint16_t fan1_rpm = 0;                   // 风扇1的每分钟转数（RPM），通过测速脉冲计算得出
+uint16_t fan2_rpm = 0;                   // 风扇2的每分钟转数（RPM）
+uint16_t pwm_frequency_fan1 = 25000;     // 风扇1的PWM频率，默认为25kHz，用于控制风扇速度
+uint16_t pwm_frequency_fan2 = 25000;     // 风扇2的PWM频率，默认为25kHz
+uint8_t duty_cycle_fan1 = 0;             // 风扇1的PWM占空比，范围0-100%，用于控制风扇转速
+uint8_t duty_cycle_fan2 = 0;             // 风扇2的PWM占空比，范围0-100%
 
-unsigned long last_rpm_time = 0;
-unsigned long last_serial_time = 0;
+// 参数配置
+unsigned long rpm_update_interval = 100;      // RPM计算的时间间隔（毫秒），用于定期计算风扇转速
+unsigned long serial_update_interval = 500;   // 串口数据发送的时间间隔（毫秒），用于定期发送风扇数据
+unsigned long last_rpm_time = 0;              // 上次计算风扇转速的时间戳，用于定期计算风扇转速
+unsigned long last_serial_time = 0;           // 上次发送串口数据的时间戳，用于定期发送风扇数据
 
 // 函数声明
-void setupTimers();
-void updateDutyCycleFan1(uint8_t duty);
-void updateDutyCycleFan2(uint8_t duty);
-void processSerial();
-void sendDataToPython();
+void setupTimers();                      // 初始化Timer1和Timer3，用于PWM输出
+void updateDutyCycleFan1(uint8_t duty);  // 更新风扇1的PWM占空比
+void updateDutyCycleFan2(uint8_t duty);  // 更新风扇2的PWM占空比
+void processSerial();                    // 处理从串口接收到的命令
+void sendDataToPython();                 // 向Python程序发送风扇的实时数据
+void verifyAndApplySettings();           // 验证并应用设置，确保占空比和频率在有效范围内
 
 // 设置Timer1和Timer3用于PWM输出
 void setupTimers() {
@@ -78,12 +82,12 @@ void setupTimers() {
 
 void updateDutyCycleFan1(uint8_t duty) {
   if (duty > 100) duty = 100;
-  OCR1A = ((ICR1 + 1) * duty) / 100 - 1;
+  OCR1A = (ICR1 * duty) / 100;
 }
 
 void updateDutyCycleFan2(uint8_t duty) {
   if (duty > 100) duty = 100;
-  OCR3A = ((ICR3 + 1) * duty) / 100 - 1;
+  OCR3A = (ICR3 * duty) / 100;
 }
 
 // 外部中断服务程序，风扇1转速计数
@@ -115,18 +119,18 @@ void setup() {
 void loop() {
   unsigned long current_time = millis();
 
-  // 每1000ms计算一次转速
-  if (current_time - last_rpm_time >= 1000) {
+  // 每rpm_update_interval计算一次转速，以适应高速风扇
+  if (current_time - last_rpm_time >= rpm_update_interval) {
     noInterrupts();
-    uint16_t pulses_fan1 = fan1_pulse_count;
-    uint16_t pulses_fan2 = fan2_pulse_count;
+    uint32_t pulses_fan1 = fan1_pulse_count;
+    uint32_t pulses_fan2 = fan2_pulse_count;
     fan1_pulse_count = 0;
     fan2_pulse_count = 0;
     interrupts();
 
-    // 计算RPM（每转2个脉冲，一般风扇为2或4，根据实际情况调整）
-    fan1_rpm = (pulses_fan1 * 60) / 2;
-    fan2_rpm = (pulses_fan2 * 60) / 2;
+    // 计算RPM（每转4个脉冲，根据实际情况调整）
+    fan1_rpm = (pulses_fan1 * 60) / 4 * (1000 / (current_time - last_rpm_time));
+    fan2_rpm = (pulses_fan2 * 60) / 4 * (1000 / (current_time - last_rpm_time));
 
     last_rpm_time = current_time;
   }
@@ -135,7 +139,7 @@ void loop() {
   processSerial();
 
   // 定期发送数据给Python程序
-  if (current_time - last_serial_time >= 500) { // 每500ms发送一次
+  if (current_time - last_serial_time >= serial_update_interval) { // 每serial_update_interval发送一次
     sendDataToPython();
     last_serial_time = current_time;
   }
@@ -193,7 +197,25 @@ void processSerial() {
       ICR3 = (16000000 / pwm_frequency_fan2) - 1;
       updateDutyCycleFan2(duty_cycle_fan2);
     }
+
+    // 验证并应用设置
+    verifyAndApplySettings();
   }
+}
+
+// 验证并应用设置，确保占空比和频率正确
+void verifyAndApplySettings() {
+  if (duty_cycle_fan1 > 100) duty_cycle_fan1 = 100;
+  if (duty_cycle_fan2 > 100) duty_cycle_fan2 = 100;
+  if (pwm_frequency_fan1 < 20 || pwm_frequency_fan1 > 50000) pwm_frequency_fan1 = 25000;
+  if (pwm_frequency_fan2 < 20 || pwm_frequency_fan2 > 50000) pwm_frequency_fan2 = 25000;
+
+  // 更新PWM频率和占空比
+  ICR1 = (16000000 / pwm_frequency_fan1) - 1;
+  updateDutyCycleFan1(duty_cycle_fan1);
+
+  ICR3 = (16000000 / pwm_frequency_fan2) - 1;
+  updateDutyCycleFan2(duty_cycle_fan2);
 }
 
 // 向Python程序发送数据
