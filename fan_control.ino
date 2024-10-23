@@ -1,5 +1,5 @@
 // Arduino Mega 风扇控制程序 - 优化版
-// 作者：Assistant
+
 
 // 引脚定义
 const uint8_t FAN1_PWM_PIN = 11;    // 风扇1的PWM引脚，连接到Timer1，通道A，用于控制风扇转速
