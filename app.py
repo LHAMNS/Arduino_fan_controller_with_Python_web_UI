@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 风扇控制程序 - WebUI 后端
-作者：LHAMNS
+
 """
 
 from flask import Flask, render_template
