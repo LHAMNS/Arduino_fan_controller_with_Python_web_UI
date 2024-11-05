@@ -58,7 +58,8 @@ def serial_thread():
     start_time = time.time()
     while True:
         try:
-            line = ser.readline().decode('utf-8').strip()
+            with ser_lock:
+                line = ser.readline().decode('utf-8').strip()
             if line:
                 logging.debug(f"Received from Arduino: {line}")
                 data = line.split(',')
@@ -98,8 +99,10 @@ def serial_thread():
                 })
                 # 输出当前状态
                 logging.info(f"Fan1 RPM: {fan1_rpm}, Fan2 RPM: {fan2_rpm}, Fan1 DC: {fan1_dc}, Fan2 DC: {fan2_dc}")
-        except Exception as e:
+        except serial.SerialException as e:
             logging.error(f"串口错误: {e}")
+        except Exception as e:
+            logging.error(f"未知错误: {e}")
         time.sleep(0.1)
 
 # 与前端的事件处理
@@ -140,13 +143,13 @@ def handle_toggle_auto_test(data):
         logging.info("Auto Test Stopped")
 
 def send_duty_cycle():
-    cmd = f"FAN1_DC:{fan1_dc},FAN2_DC:{fan2_dc},FAN1_FREQ:{pwm_frequency_fan1}\n"
+    cmd = f"FAN1_DC:{fan1_dc},FAN2_DC:{fan2_dc}\n"
     with ser_lock:
         ser.write(cmd.encode('utf-8'))
     logging.debug(f"Sent to Arduino: {cmd.strip()}")
 
 def send_pwm_frequency():
-    cmd = f"FAN1_FREQ:{pwm_frequency_fan1},FAN2_FREQ:{pwm_frequency_fan2},FAN1_DC:{fan1_dc},FAN2_DC:{fan2_dc}\n"
+    cmd = f"FAN1_FREQ:{pwm_frequency_fan1},FAN2_FREQ:{pwm_frequency_fan2}\n"
     with ser_lock:
         ser.write(cmd.encode('utf-8'))
     logging.debug(f"Sent to Arduino: {cmd.strip()}")
@@ -179,9 +182,9 @@ def start_serial():
         ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
         threading.Thread(target=serial_thread, daemon=True).start()
         logging.info(f"Connected to Arduino on {SERIAL_PORT} at {BAUD_RATE} baud.")
-    except serial.SerialException:
-        logging.error(f"无法打开串口 {SERIAL_PORT}")
-        exit()
+    except serial.SerialException as e:
+        logging.error(f"无法打开串口 {SERIAL_PORT}: {e}")
+        sys.exit(1)
 
 if __name__ == '__main__':
     start_serial()
