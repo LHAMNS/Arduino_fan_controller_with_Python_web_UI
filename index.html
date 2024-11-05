@@ -1,3 +1,4 @@
+<!-- 风扇控制程序 - WebUI -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -58,40 +59,40 @@
             <p>风扇2转速：<span id="fan2RpmText">0</span></p>
             <h3>手动控制</h3>
             <div class="form-group">
-                <input type="checkbox" id="syncDcCheckbox" checked> 同步风扇占空比
+                <input type="checkbox" id="syncDcCheckbox" checked disabled> 同步风扇占空比
             </div>
             <div class="form-group">
                 <label for="fan1DcSlider">风扇1占空比</label>
-                <input type="range" class="form-control-range" id="fan1DcSlider" min="0" max="100" value="0">
+                <input type="range" class="form-control-range" id="fan1DcSlider" min="0" max="100" value="0" disabled>
             </div>
             <div class="form-group" id="fan2DcControl" style="display: none;">
                 <label for="fan2DcSlider">风扇2占空比</label>
-                <input type="range" class="form-control-range" id="fan2DcSlider" min="0" max="100" value="0">
+                <input type="range" class="form-control-range" id="fan2DcSlider" min="0" max="100" value="0" disabled>
             </div>
             <h3>自动测试</h3>
-            <button id="autoTestButton" class="btn btn-primary">启动自动测试</button>
+            <button id="autoTestButton" class="btn btn-primary" disabled>启动自动测试</button>
             <h3>设置PWM频率 (Hz)</h3>
             <div class="form-group">
-                <input type="checkbox" id="syncFreqCheckbox" checked> 同步风扇频率
+                <input type="checkbox" id="syncFreqCheckbox" checked disabled> 同步风扇频率
             </div>
             <div class="form-group">
                 <label for="fan1FreqInput">风扇1频率</label>
-                <input type="number" class="form-control" id="fan1FreqInput" value="25000">
+                <input type="number" class="form-control" id="fan1FreqInput" value="25000" disabled>
             </div>
             <div class="form-group" id="fan2FreqControl" style="display: none;">
                 <label for="fan2FreqInput">风扇2频率</label>
-                <input type="number" class="form-control" id="fan2FreqInput" value="25000">
+                <input type="number" class="form-control" id="fan2FreqInput" value="25000" disabled>
             </div>
-            <button id="setFreqButton" class="btn btn-primary">设置频率</button>
+            <button id="setFreqButton" class="btn btn-primary" disabled>设置频率</button>
             <h3>图表模式</h3>
-            <select id="chartModeSelect" class="form-control">
+            <select id="chartModeSelect" class="form-control" disabled>
                 <option value="2d" selected>2D</option>
                 <option value="3d">3D</option>
             </select>
             <h3>图表刷新速度 (毫秒)</h3>
             <div class="form-group">
                 <label for="refreshRateInput">刷新速度</label>
-                <input type="number" class="form-control" id="refreshRateInput" value="1000">
+                <input type="number" class="form-control" id="refreshRateInput" value="1000" disabled>
             </div>
         </div>
     </div>
@@ -106,6 +107,7 @@
 <!-- 自定义 JavaScript -->
 <script>
     $(document).ready(function() {
+        // 常用变量定义
         var socket = io();
         var fan1Rpm = 0;
         var fan2Rpm = 0;
@@ -121,7 +123,10 @@
         var autoTestRunning = false;
         var startTime = Date.now();
         var fanRunning = false;
-        var refreshRate = parseInt($('#refreshRateInput').val());
+        var refreshRate = 100;
+
+        // 设置初始刷新速度值
+        refreshRate = parseInt($('#refreshRateInput').val());
 
         // 添加 Socket.IO 连接状态的调试信息
         socket.on('connect', function() {
@@ -356,11 +361,54 @@
             fanRunning = !fanRunning;
             if (fanRunning) {
                 $(this).removeClass('btn-danger').addClass('btn-success').text('停止风扇');
+                enableControls();
             } else {
                 $(this).removeClass('btn-success').addClass('btn-danger').text('启动风扇');
+                disableControls();
+                resetDutyCycle();
             }
             socket.emit('toggle_fan', {'fan_running': fanRunning});
         });
+
+        // 启用所有控件
+        function enableControls() {
+            $('#fan1DcSlider').prop('disabled', false);
+            $('#fan2DcSlider').prop('disabled', false);
+            $('#syncDcCheckbox').prop('disabled', false);
+            $('#fan1FreqInput').prop('disabled', false);
+            $('#fan2FreqInput').prop('disabled', false);
+            $('#syncFreqCheckbox').prop('disabled', false);
+            $('#setFreqButton').prop('disabled', false);
+            $('#autoTestButton').prop('disabled', false);
+            $('#chartModeSelect').prop('disabled', false);
+            $('#refreshRateInput').prop('disabled', false);
+        }
+
+        // 禁用所有控件
+        function disableControls() {
+            $('#fan1DcSlider').prop('disabled', true);
+            $('#fan2DcSlider').prop('disabled', true);
+            $('#syncDcCheckbox').prop('disabled', true);
+            $('#fan1FreqInput').prop('disabled', true);
+            $('#fan2FreqInput').prop('disabled', true);
+            $('#syncFreqCheckbox').prop('disabled', true);
+            $('#setFreqButton').prop('disabled', true);
+            $('#autoTestButton').prop('disabled', true);
+            $('#chartModeSelect').prop('disabled', true);
+            $('#refreshRateInput').prop('disabled', true);
+        }
+
+        // 重置占空比为0
+        function resetDutyCycle() {
+            $('#fan1DcSlider').val(0);
+            $('#fan2DcSlider').val(0);
+            $('#fan1DcText').text(0);
+            $('#fan2DcText').text(0);
+            socket.emit('set_duty_cycle', {
+                'fan1_dc': 0,
+                'fan2_dc': 0
+            });
+        }
 
         // 定时刷新图表
         setInterval(function() {
